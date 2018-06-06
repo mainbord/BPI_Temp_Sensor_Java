@@ -1,6 +1,12 @@
 package com.asuscomm.mainbord;
 
+import lombok.extern.log4j.Log4j2;
+import lombok.extern.slf4j.Slf4j;
+
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
@@ -13,13 +19,15 @@ public class Manager {
     // <celsius, binary>
     private final Map<String, String> commands = new TreeMap<>();
     private final int PAUSE = 10; // пауза между сигналами в милисекундах
+    private final String pin;
+    private final String fileName = "input";
 
-    private static final String pin7 = "gpio35";
-    private static final String pin11 = "gpio276";
 
     private Set<String> inValue = new HashSet<>();
 
-    Manager() throws IOException, InterruptedException {
+    Manager(String pin) throws IOException, InterruptedException {
+        this.pin = pin;
+
         //creating celsius to binary from 0 to 125
         double sum = 0;
         for (int i = 0; i < 201; i++) {
@@ -45,6 +53,7 @@ public class Manager {
         commands.put("B8h", "Recall E2");
         commands.put("B4h", "Read Power Supply");
 
+        System.out.println("__ init starting");
         init();
     }
 
@@ -56,7 +65,7 @@ public class Manager {
      * Step 2. ROM Command (followed by any required data exchange)
      * Step 3. DS18B20 Function Command (followed by any required data exchange)
      */
-    private void init() throws IOException, InterruptedException {
+    private void init() {
         String sensorNumber = initialization();
     }
 
@@ -68,14 +77,33 @@ public class Manager {
      * the presence pulse in response to the reset, it is indicating
      * to the master that it is on the bus and ready to operate.
      */
-    private String initialization() throws IOException, InterruptedException {
+    private String initialization() {
         // Передаём 0 как минимум 480 мс
-        writeLowVoltage(pin7, 500);
+        prepareToWrite();
+        writeLowVoltage(500);
 
-        // Передаём 1 не больше чем 15мс
-        writeHighVoltage(pin7, 15);
+        // Передаём 1 не больше чем 15мс, чтобы успеть переключиться в режим чтения
+        writeHighVoltage(10);
 
-        int result = readVoltage(pin7);
+        int result = readVoltage();
+
+        System.out.println("__ write succesfull");
+        try {
+            Files.createFile(Paths.get("/home/pi" + File.separator + fileName));
+            System.out.println("__ file created");
+            try (PrintWriter fw = new PrintWriter("/home/pi" + File.separator + fileName)) {
+                prepareToRead();
+                System.out.println("__ ready to read");
+                for (int i = 0; i < 1000 * 10; i++) {
+                    fw.print(readVoltage());
+                    TimeUnit.MICROSECONDS.sleep(10);
+                }
+                fw.flush();
+            }
+        } catch (Exception e) {
+            System.out.println("err: " + e.getMessage());
+        }
+        System.out.println("__ read succesfull");
         return String.valueOf(result);
     }
 
@@ -89,8 +117,8 @@ public class Manager {
 
     public static void main(String[] args) {
         try {
-            Manager manager = new Manager();
-            StringBuilder sb = new StringBuilder();
+            Manager manager = new Manager(BpiM2uPin.pins.get("pin7"));
+/*            StringBuilder sb = new StringBuilder();
             sb.append(manager.readVoltage(pin7));
             System.out.println(sb);
             manager.writeVoltage(pin7, 1);
@@ -99,39 +127,66 @@ public class Manager {
             TimeUnit.SECONDS.sleep(1);
             manager.writeVoltage(pin7, 1);
             TimeUnit.SECONDS.sleep(1);
-            manager.writeVoltage(pin7, 0);
+            manager.writeVoltage(pin7, 0);*/
         } catch (IOException e) {
-            System.out.println(e.getMessage());
+            System.out.println("err: " + e.getMessage());
         } catch (InterruptedException e) {
-            System.out.println(e.getMessage());
+            System.out.println("err: " + e.getMessage());
         }
     }
 
-    private void writeVoltage(String pin, int value) throws IOException {
-        Files.write(Paths.get("/sys/class/gpio/" + pin + "/" + "direction"), "out".getBytes());
+    private void prepareToWrite() {
+        try {
+            Files.write(Paths.get("/sys/class/gpio/" + pin + "/" + "direction"), "out".getBytes());
+        } catch (Exception e) {
+            System.out.println("err: " + e.getMessage());
+        }
+    }
+
+    private void prepareToRead() {
+        try {
+            Files.write(Paths.get("/sys/class/gpio/" + pin + "/" + "direction"), "in".getBytes());
+        } catch (Exception e) {
+            System.out.println("err: " + e.getMessage());
+        }
+    }
+
+    private void writeVoltage(int value) throws IOException {
         Files.write(Paths.get("/sys/class/gpio/" + pin + "/" + "value"), String.valueOf(value).getBytes());
     }
 
-    private int readVoltage(String pin) throws IOException {
-        Files.write(Paths.get("/sys/class/gpio/" + pin + "/" + "direction"), "in".getBytes());
-        List<String> voltages = Files.readAllLines(Paths.get("/sys/class/gpio/" + pin + "/" + "value"));
-        return Integer.valueOf(voltages.get(0));
+    private int readVoltage() {
+        try {
+            List<String> voltages = Files.readAllLines(Paths.get("/sys/class/gpio/" + pin + "/" + "value"));
+            return Integer.valueOf(voltages.get(0));
+        } catch (Exception e) {
+            System.out.println("err: " + e.getMessage());
+            return 0;
+        }
     }
 
-    private void writeHex(String pin, String hex) throws InterruptedException, IOException {
+    private void writeHex(String hex) throws InterruptedException, IOException {
         for (int i = 0; i < hex.length(); i++) {
-            writeVoltage(pin, (int) hex.charAt(i));
+            writeVoltage((int) hex.charAt(i));
             TimeUnit.MILLISECONDS.sleep(PAUSE);
         }
     }
 
-    private void writeHighVoltage(String pin, int milSec) throws IOException, InterruptedException {
-        writeVoltage(pin, 1);
-        TimeUnit.MILLISECONDS.sleep(milSec);
+    private void writeHighVoltage(int milSec) {
+        try {
+            writeVoltage(1);
+            TimeUnit.MILLISECONDS.sleep(milSec);
+        } catch (Exception e) {
+            System.out.println("err: " + e.getMessage());
+        }
     }
 
-    private void writeLowVoltage(String pin, int milSec) throws IOException, InterruptedException {
-        writeVoltage(pin, 0);
-        TimeUnit.MILLISECONDS.sleep(milSec);
+    private void writeLowVoltage(int milSec) {
+        try {
+            writeVoltage(0);
+            TimeUnit.MILLISECONDS.sleep(milSec);
+        } catch (Exception e) {
+            System.out.println("err: " + e.getMessage());
+        }
     }
 }
