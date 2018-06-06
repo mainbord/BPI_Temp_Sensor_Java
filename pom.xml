@@ -21,6 +21,7 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <version>1.18.0</version>
+            <scope>provided</scope>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.pi4j/pi4j-core -->
@@ -41,7 +42,22 @@
                     <target>1.8</target>
                 </configuration>
             </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <addClasspath>true</addClasspath>
+                            <mainClass>com.asuscomm.mainbord.Manager</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+
+            </plugin>
         </plugins>
+
     </build>
 
 </project>
