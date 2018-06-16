@@ -1,10 +1,7 @@
 package com.asuscomm.mainbord;
 
-import lombok.extern.log4j.Log4j2;
-import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Files;
@@ -14,6 +11,7 @@ import java.util.concurrent.TimeUnit;
 
 public class Manager {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Manager.class);
     private final Map<Double, String> tempCelcFromBinary = new TreeMap<>();
 
     // <celsius, binary>
@@ -21,7 +19,6 @@ public class Manager {
     private final int PAUSE = 10; // пауза между сигналами в милисекундах
     private final String pin;
     private final String fileName = "input";
-
 
     private Set<String> inValue = new HashSet<>();
 
@@ -54,6 +51,7 @@ public class Manager {
         commands.put("B4h", "Read Power Supply");
 
         System.out.println("__ init starting");
+        log.info("__ init starting");
         init();
     }
 
@@ -116,9 +114,13 @@ public class Manager {
     }
 
     public static void main(String[] args) {
-        try {
+        System.out.println(123);
+        log.info("123");
+        log.error("1233");
+        log.trace("1233555");
+/*        try {
             Manager manager = new Manager(BpiM2uPin.pins.get("pin7"));
-/*            StringBuilder sb = new StringBuilder();
+*//*            StringBuilder sb = new StringBuilder();
             sb.append(manager.readVoltage(pin7));
             System.out.println(sb);
             manager.writeVoltage(pin7, 1);
@@ -127,12 +129,12 @@ public class Manager {
             TimeUnit.SECONDS.sleep(1);
             manager.writeVoltage(pin7, 1);
             TimeUnit.SECONDS.sleep(1);
-            manager.writeVoltage(pin7, 0);*/
+            manager.writeVoltage(pin7, 0);*//*
         } catch (IOException e) {
             System.out.println("err: " + e.getMessage());
         } catch (InterruptedException e) {
             System.out.println("err: " + e.getMessage());
-        }
+        }*/
     }
 
     private void prepareToWrite() {
