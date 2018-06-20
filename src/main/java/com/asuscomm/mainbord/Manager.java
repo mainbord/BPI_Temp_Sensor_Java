@@ -1,6 +1,8 @@
 package com.asuscomm.mainbord;
 
 
+import lombok.extern.log4j.Log4j;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -9,20 +11,29 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+@Log4j
 public class Manager {
 
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Manager.class);
     private final Map<Double, String> tempCelcFromBinary = new TreeMap<>();
 
     // <celsius, binary>
     private final Map<String, String> commands = new TreeMap<>();
     private final int PAUSE = 10; // пауза между сигналами в милисекундах
     private final String pin;
-    private final String fileName = "input";
+    private final String fileName = "input.txt";
+
+    public String getPin() {
+        return pin;
+    }
+
+    public String getFileName() {
+        return fileName;
+    }
+
 
     private Set<String> inValue = new HashSet<>();
 
-    Manager(String pin) throws IOException, InterruptedException {
+    Manager(String pin) {
         this.pin = pin;
 
         //creating celsius to binary from 0 to 125
@@ -49,9 +60,21 @@ public class Manager {
         commands.put("48h", "Copy Scratchpad");
         commands.put("B8h", "Recall E2");
         commands.put("B4h", "Read Power Supply");
+        log.trace("__ init starting");
 
-        System.out.println("__ init starting");
-        log.info("__ init starting");
+//        Files.write(Paths.get(" /sys/class/gpio/export"), "35".getBytes());
+
+
+        try {
+            Process process;
+            process = Runtime.getRuntime()
+                    .exec("echo 35 > /sys/class/gpio/export");
+            process.waitFor();
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+            log.error(e);
+        }
+
         init();
     }
 
@@ -84,14 +107,13 @@ public class Manager {
         writeHighVoltage(10);
 
         int result = readVoltage();
-
-        System.out.println("__ write succesfull");
+        log.trace("__ write succesfull");
         try {
             Files.createFile(Paths.get("/home/pi" + File.separator + fileName));
-            System.out.println("__ file created");
+            log.trace("__ file created");
             try (PrintWriter fw = new PrintWriter("/home/pi" + File.separator + fileName)) {
                 prepareToRead();
-                System.out.println("__ ready to read");
+                log.trace("__ ready to read");
                 for (int i = 0; i < 1000 * 10; i++) {
                     fw.print(readVoltage());
                     TimeUnit.MICROSECONDS.sleep(10);
@@ -99,9 +121,9 @@ public class Manager {
                 fw.flush();
             }
         } catch (Exception e) {
-            System.out.println("err: " + e.getMessage());
+            log.error(e);
         }
-        System.out.println("__ read succesfull");
+        log.trace("__ read succesfull");
         return String.valueOf(result);
     }
 
@@ -114,34 +136,24 @@ public class Manager {
     }
 
     public static void main(String[] args) {
-        System.out.println(123);
-        log.info("123");
-        log.error("1233");
-        log.trace("1233555");
-/*        try {
-            Manager manager = new Manager(BpiM2uPin.pins.get("pin7"));
-*//*            StringBuilder sb = new StringBuilder();
-            sb.append(manager.readVoltage(pin7));
+        Manager manager = new Manager(BpiM2uPin.pins.get("pin7"));
+        StringBuilder sb = new StringBuilder();
+/*            sb.append(manager.readVoltage());
             System.out.println(sb);
-            manager.writeVoltage(pin7, 1);
+            manager.writeVoltage(1);
             TimeUnit.SECONDS.sleep(1);
-            manager.writeVoltage(pin7, 0);
+            manager.writeVoltage(0);
             TimeUnit.SECONDS.sleep(1);
-            manager.writeVoltage(pin7, 1);
+            manager.writeVoltage(1);
             TimeUnit.SECONDS.sleep(1);
-            manager.writeVoltage(pin7, 0);*//*
-        } catch (IOException e) {
-            System.out.println("err: " + e.getMessage());
-        } catch (InterruptedException e) {
-            System.out.println("err: " + e.getMessage());
-        }*/
+        manager.writeVoltage(0);*/
     }
 
     private void prepareToWrite() {
         try {
             Files.write(Paths.get("/sys/class/gpio/" + pin + "/" + "direction"), "out".getBytes());
         } catch (Exception e) {
-            System.out.println("err: " + e.getMessage());
+            log.error(e);
         }
     }
 
@@ -149,12 +161,16 @@ public class Manager {
         try {
             Files.write(Paths.get("/sys/class/gpio/" + pin + "/" + "direction"), "in".getBytes());
         } catch (Exception e) {
-            System.out.println("err: " + e.getMessage());
+            log.error(e);
         }
     }
 
-    private void writeVoltage(int value) throws IOException {
-        Files.write(Paths.get("/sys/class/gpio/" + pin + "/" + "value"), String.valueOf(value).getBytes());
+    private void writeVoltage(int value) {
+        try {
+            Files.write(Paths.get("/sys/class/gpio/" + pin + "/" + "value"), String.valueOf(value).getBytes());
+        } catch (IOException e) {
+            log.error(e);
+        }
     }
 
     private int readVoltage() {
@@ -162,15 +178,19 @@ public class Manager {
             List<String> voltages = Files.readAllLines(Paths.get("/sys/class/gpio/" + pin + "/" + "value"));
             return Integer.valueOf(voltages.get(0));
         } catch (Exception e) {
-            System.out.println("err: " + e.getMessage());
-            return 0;
+            log.error(e);
+            throw new RuntimeException(e.getMessage());
         }
     }
 
-    private void writeHex(String hex) throws InterruptedException, IOException {
+    private void writeHex(String hex) {
         for (int i = 0; i < hex.length(); i++) {
-            writeVoltage((int) hex.charAt(i));
-            TimeUnit.MILLISECONDS.sleep(PAUSE);
+            try {
+                writeVoltage((int) hex.charAt(i));
+                TimeUnit.MILLISECONDS.sleep(PAUSE);
+            } catch (InterruptedException e) {
+                log.error(e);
+            }
         }
     }
 
@@ -179,7 +199,7 @@ public class Manager {
             writeVoltage(1);
             TimeUnit.MILLISECONDS.sleep(milSec);
         } catch (Exception e) {
-            System.out.println("err: " + e.getMessage());
+            log.error(e);
         }
     }
 
@@ -188,7 +208,7 @@ public class Manager {
             writeVoltage(0);
             TimeUnit.MILLISECONDS.sleep(milSec);
         } catch (Exception e) {
-            System.out.println("err: " + e.getMessage());
+            log.error(e);
         }
     }
 }
