@@ -1,11 +1,10 @@
 package com.asuscomm.mainbord;
 
 
+import lombok.Getter;
 import lombok.extern.log4j.Log4j;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.PrintWriter;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
@@ -106,25 +105,91 @@ public class Manager {
         // Передаём 1 не больше чем 15мс, чтобы успеть переключиться в режим чтения
         writeHighVoltage(10);
 
-        int result = readVoltage();
         log.trace("__ write succesfull");
         try {
-            Files.createFile(Paths.get("/home/pi" + File.separator + fileName));
+            String filePath = "/home/pi" + File.separator + fileName;
+            Files.deleteIfExists(Paths.get(filePath));
+            Files.createFile(Paths.get(filePath));
             log.trace("__ file created");
-            try (PrintWriter fw = new PrintWriter("/home/pi" + File.separator + fileName)) {
+            try (PrintWriter fw = new PrintWriter(filePath);
+                 BufferedReader br = new BufferedReader(new FileReader("/sys/class/gpio/" + "gpio35" + "/" + "value"))) {
                 prepareToRead();
                 log.trace("__ ready to read");
-                for (int i = 0; i < 1000 * 10; i++) {
-                    fw.print(readVoltage());
-                    TimeUnit.MICROSECONDS.sleep(10);
+
+                File file = new File("/sys/class/gpio/" + "gpio35" + "/" + "value");
+
+//                String line = "0";
+                int count = 0;
+                Date dateStart = new Date();
+                Date dateEnd = new Date();
+                long lm = 0;
+
+                List<Pair> timeVoltageList = new LinkedList<>();
+                while (true) {
+                    if (count == 1000) {
+                        break;
+                    }
+                    Thread.sleep(1);
+//                    timeVoltageList.add(new Pair((dateEnd.getTime() - dateStart.getTime()), Integer.valueOf(line)));
+                    dateStart = new Date();
+//                    br.mark(0);
+//                    br.reset();
+                    long currentLM = file.lastModified();
+                    if (currentLM == lm){
+                        timeVoltageList.add(new Pair((dateEnd.getTime() - dateStart.getTime()), -1));
+                        count++;
+                        dateEnd = new Date();
+                        continue;
+                    } else{
+                        timeVoltageList.add(new Pair((dateEnd.getTime() - dateStart.getTime()), readVoltage()));
+                    }
+
+
+//                    line = br.readLine();
+                    count++;
+                    dateEnd = new Date();
                 }
+
+/*                List<Pair> timeVoltageList = new LinkedList<>();
+                for (int i = 0; i < 1000; i++) {
+                    Date dateStart = new Date();
+                    Date dateEnd = new Date();
+                    dateStart = new Date();
+                    int val = readVoltage();
+
+                    FileReader reader = new FileReader("");
+                    reader.read();
+                    reader.ready();
+
+                    dateEnd = new Date();
+                    timeVoltageList.add(new Pair((dateEnd.getTime() - dateStart.getTime()), val));
+//                    log.trace("Time read in milliseconds(Files.readAllLines): " + (dateEnd.getTime() - dateStart.getTime()) + ", value = " + val);
+                }
+                */
+                fw.print(timeVoltageList.toString());
                 fw.flush();
             }
         } catch (Exception e) {
             log.error(e);
         }
         log.trace("__ read succesfull");
-        return String.valueOf(result);
+        return "test answer";
+    }
+
+    @Getter
+    class Pair {
+        long time;
+        int voltage;
+
+        public Pair(long time, int voltage) {
+            this.time = time;
+            this.voltage = voltage;
+        }
+
+        @Override
+        public String toString() {
+            return "(" + time + "," + voltage + ")";
+        }
     }
 
     private String stringCompleteTo12(String in) {
@@ -136,9 +201,46 @@ public class Manager {
     }
 
     public static void main(String[] args) {
+/*        // измеряем скорость чтения и записи в драйвер gpio
+        // 1) постоянно открываем файл
+        // через flush не создавая reader и writer
+
+        try {
+            Process process;
+            process = Runtime.getRuntime()
+                    .exec("echo 35 > /sys/class/gpio/export");
+            process.waitFor();
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+            log.error(e);
+        }
+
+        try {
+            Date dateStart = new Date();
+            Date dateEnd = new Date();
+
+            Files.write(Paths.get("/sys/class/gpio/" + "gpio35" + "/" + "direction"), "in".getBytes());
+            for (int i = 0; i < 3; i++) {
+                dateStart = new Date();
+                List<String> voltages = Files.readAllLines(Paths.get("/sys/class/gpio/" + "gpio35" + "/" + "value"));
+                Integer value = Integer.valueOf(voltages.get(0));
+                dateEnd = new Date();
+                System.out.println("Time read in milliseconds(Files.readAllLines): " + (dateEnd.getTime() - dateStart.getTime()));
+            }
+
+            Files.write(Paths.get("/sys/class/gpio/" + "gpio35" + "/" + "direction"), "out".getBytes());
+            for (int i = 0; i < 3; i++) {
+                dateStart = new Date();
+                Files.write(Paths.get("/sys/class/gpio/" + "gpio35" + "/" + "value"), String.valueOf(1).getBytes());
+                dateEnd = new Date();
+                System.out.println("Time write in milliseconds(Files.write): " + (dateEnd.getTime() - dateStart.getTime()));
+            }
+        } catch (Exception e) {
+            log.error(e);
+        }*/
         Manager manager = new Manager(BpiM2uPin.pins.get("pin7"));
-        StringBuilder sb = new StringBuilder();
-/*            sb.append(manager.readVoltage());
+/*        StringBuilder sb = new StringBuilder();
+            sb.append(manager.readVoltage());
             System.out.println(sb);
             manager.writeVoltage(1);
             TimeUnit.SECONDS.sleep(1);
