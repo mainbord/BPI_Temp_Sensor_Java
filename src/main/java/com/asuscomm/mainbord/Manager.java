@@ -10,13 +10,15 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+import static com.asuscomm.mainbord.Manager.RomCommands.*;
+
 @Log4j
 public class Manager {
 
     private final Map<Double, String> tempCelcFromBinary = new TreeMap<>();
 
     // <celsius, binary>
-    private final Map<String, String> commands = new TreeMap<>();
+    private final Map<RomCommands, String> commands = new TreeMap<>();
     private final int PAUSE = 10; // пауза между сигналами в милисекундах
     private final String pin;
     private final String fileName = "input.txt";
@@ -48,17 +50,17 @@ public class Manager {
             sum = sum + 0.0625;
         }
 
-        commands.put("F0h", "Search Rom"); // запускается в начале, спрашивает номер датчика
-        commands.put("33h", "Read Rom");
-        commands.put("55H", "Match Rom");
-        commands.put("CCh", "Skip Rom");
-        commands.put("ECh", "Alarm Search"); // The operation of this command is identical to the operation of the Search ROM command except that only slaves with a set alarm flag will respond
-        commands.put("44h", "Convert T");
-        commands.put("4Eh", "Write Scratchpad");
-        commands.put("BEh", "Read Scratchpad");
-        commands.put("48h", "Copy Scratchpad");
-        commands.put("B8h", "Recall E2");
-        commands.put("B4h", "Read Power Supply");
+        commands.put(SEARCH_ROM, "F0h"); // запускается в начале, спрашивает номер датчика
+        commands.put(READ_ROM, "33h"); // This command allows the bus master to read the DS18B20’s 8-bit family code, unique 48-bit serial number, and 8-bit CRC. This command can only be used if there is a single DS18B20 on the bus
+        commands.put(MATCH_ROM, "55H");
+        commands.put(SKIP_ROM, "CCh"); // This command can save time in a single drop bus system by allowing the bus master to access the memory functions without providing the 64-bit ROM code.
+        commands.put(ALARM_SEARCH, "ECh"); // The operation of this command is identical to the operation of the Search ROM command except that only slaves with a set alarm flag will respond
+        commands.put(CONVERT_T, "44h"); // Initiates temperature conversion. DS18B20 transmits conversion status to master (not applicable for parasite-powered DS18B20s).
+        commands.put(WRITE_SCRATCHPAD, "4Eh"); // Writes data into scratchpad bytes 2, 3, and 4 (T H , T L , and configuration registers). Master transmits 3 data bytes to DS18B20.
+        commands.put(READ_SCRATCHPAD, "BEh"); // Reads the entire scratchpad including the CRC byte. DS18B20 transmits up to 9 data bytes to master.
+        commands.put(COPY_SCRATCHPAD, "48h"); // Copies T H , T L , and configuration register data from the scratchpad to EEPROM.
+        commands.put(RECALL_E2, "B8h"); // Recalls T H , T L , and configuration register data from EEPROM to the scratchpad. DS18B20 transmits recall status to master.
+        commands.put(READ_POWER_SUPPLY, "B4h"); // Signals DS18B20 power supply mode to the master. DS18B20 transmits supply status to master.
         log.trace("__ init starting");
 
 //        Files.write(Paths.get(" /sys/class/gpio/export"), "35".getBytes());
@@ -75,6 +77,15 @@ public class Manager {
         }
 
         init();
+        sendHexCommand(commands.get(CONVERT_T));
+        sendHexCommand(commands.get(SKIP_ROM));
+        sendHexCommand(commands.get(READ_SCRATCHPAD));
+    }
+
+    enum RomCommands {
+        SEARCH_ROM, READ_ROM, MATCH_ROM, SKIP_ROM, ALARM_SEARCH,
+        CONVERT_T, WRITE_SCRATCHPAD, READ_SCRATCHPAD, COPY_SCRATCHPAD,
+        RECALL_E2, READ_POWER_SUPPLY
     }
 
     /**
@@ -135,12 +146,12 @@ public class Manager {
 //                    br.mark(0);
 //                    br.reset();
                     long currentLM = file.lastModified();
-                    if (currentLM == lm){
+                    if (currentLM == lm) {
                         timeVoltageList.add(new Pair((dateEnd.getTime() - dateStart.getTime()), -1));
                         count++;
                         dateEnd = new Date();
                         continue;
-                    } else{
+                    } else {
                         timeVoltageList.add(new Pair((dateEnd.getTime() - dateStart.getTime()), readVoltage()));
                     }
 
@@ -312,5 +323,9 @@ public class Manager {
         } catch (Exception e) {
             log.error(e);
         }
+    }
+
+    private void sendHexCommand(String hexCommand) {
+
     }
 }
