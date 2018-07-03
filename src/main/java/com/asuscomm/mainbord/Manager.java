@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.extern.log4j.Log4j;
 
 import java.io.*;
+import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
@@ -34,7 +35,7 @@ public class Manager {
 
     private Set<String> inValue = new HashSet<>();
 
-    Manager(String pin) {
+    Manager(String pin) throws InterruptedException {
         this.pin = pin;
 
         //creating celsius to binary from 0 to 125
@@ -76,10 +77,15 @@ public class Manager {
             log.error(e);
         }
 
-        init();
-        sendHexCommand(commands.get(CONVERT_T));
-        sendHexCommand(commands.get(SKIP_ROM));
-        sendHexCommand(commands.get(READ_SCRATCHPAD));
+        // читаем температуру 3 раза
+        for (int i = 0; i < 3; i++) {
+            init();
+            sendHexCommand(commands.get(CONVERT_T));
+            sendHexCommand(commands.get(SKIP_ROM));
+            sendHexCommand(commands.get(READ_SCRATCHPAD));
+            String temperature = readNBits(3*8);
+            System.out.println(temperature);
+        }
     }
 
     enum RomCommands {
@@ -136,10 +142,7 @@ public class Manager {
                 long lm = 0;
 
                 List<Pair> timeVoltageList = new LinkedList<>();
-                while (true) {
-                    if (count == 1000) {
-                        break;
-                    }
+                while (count != 1000) {
                     Thread.sleep(1);
 //                    timeVoltageList.add(new Pair((dateEnd.getTime() - dateStart.getTime()), Integer.valueOf(line)));
                     dateStart = new Date();
@@ -184,7 +187,7 @@ public class Manager {
             log.error(e);
         }
         log.trace("__ read succesfull");
-        return "test answer";
+        return "presence pulses";
     }
 
     @Getter
@@ -211,7 +214,7 @@ public class Manager {
         return sb.toString();
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
 /*        // измеряем скорость чтения и записи в драйвер gpio
         // 1) постоянно открываем файл
         // через flush не создавая reader и writer
@@ -325,7 +328,56 @@ public class Manager {
         }
     }
 
-    private void sendHexCommand(String hexCommand) {
+    private final int READ_TIME_SLOT = 60; //microseconds
 
+    private void sendHexCommand(String hexCommand) throws InterruptedException {
+
+        int WRITE_ONE_TIME_SLOT_AFTER_PULLING_THE_1_WIRE_BUS_LOW = 15;
+        int RECOVERY_TIME_BETWEEN_INDIVIDUAL_WRITE_SLOTS = 1;
+        int WRITE_TIME_SLOT = 60;
+
+
+        String binariCommand = hexToBin(hexCommand);
+        int prevBit = 0;
+        writeLowVoltage(WRITE_ONE_TIME_SLOT_AFTER_PULLING_THE_1_WIRE_BUS_LOW);
+        for (int i = 0; i < binariCommand.length(); i++) {
+            char bit = binariCommand.charAt(i);
+            writeLowVoltage(RECOVERY_TIME_BETWEEN_INDIVIDUAL_WRITE_SLOTS);
+            if (bit == 1){
+                writeHighVoltage(WRITE_TIME_SLOT);
+            }
+            else {
+                writeLowVoltage(WRITE_TIME_SLOT);
+            }
+/*            if (prevBit == 1 && bit == 1) {
+                writeLowVoltage(RECOVERY_TIME_BETWEEN_INDIVIDUAL_WRITE_SLOTS);
+                writeHighVoltage(WRITE_TIME_SLOT);
+            } else if (prevBit == 0 && bit == 1) {
+                writeLowVoltage(WRITE_ONE_TIME_SLOT_AFTER_PULLING_THE_1_WIRE_BUS_LOW);
+                writeHighVoltage(WRITE_TIME_SLOT);
+            } else if (prevBit == 1 && bit == 0) {
+
+            } else if (prevBit == 0 && bit == 0) {
+                writeLowVoltage(WRITE_TIME_SLOT);
+            }
+            prevBit = bit;*/
+        }
+    }
+
+    private int readWithLock(){
+        return 0;
+    }
+
+    private String readNBits (int numberOfBits){
+        StringBuilder sb = new StringBuilder();
+        writeLowVoltage(15);
+        for (int i = 0; i < numberOfBits; i++) {
+            sb.append(readWithLock());
+        }
+        return sb.toString();
+    }
+
+    private String hexToBin(String s) {
+        return new BigInteger(s, 16).toString(2);
     }
 }
