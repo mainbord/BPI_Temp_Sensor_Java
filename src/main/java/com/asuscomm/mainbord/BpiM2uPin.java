@@ -11,5 +11,6 @@ public class BpiM2uPin {
     static {
         pins.put("pin7","gpio35");
         pins.put("pin11","gpio276");
+        pins.put("pin40","gpio229");
     }
 }

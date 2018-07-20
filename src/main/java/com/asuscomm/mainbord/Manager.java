@@ -35,7 +35,7 @@ public class Manager {
 
     private Set<String> inValue = new HashSet<>();
 
-    Manager(String pin) throws InterruptedException {
+    Manager(String pin) throws InterruptedException, IOException {
         this.pin = pin;
 
         //creating celsius to binary from 0 to 125
@@ -67,7 +67,8 @@ public class Manager {
 //        Files.write(Paths.get(" /sys/class/gpio/export"), "35".getBytes());
 
 
-        try {
+        Files.write(Paths.get("/sys/class/gpio/export"), "35".getBytes());
+/*        try {
             Process process;
             process = Runtime.getRuntime()
                     .exec("echo 35 > /sys/class/gpio/export");
@@ -75,7 +76,7 @@ public class Manager {
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
             log.error(e);
-        }
+        }*/
 
         // читаем температуру 3 раза
         for (int i = 0; i < 3; i++) {
@@ -83,7 +84,7 @@ public class Manager {
             sendHexCommand(commands.get(CONVERT_T));
             sendHexCommand(commands.get(SKIP_ROM));
             sendHexCommand(commands.get(READ_SCRATCHPAD));
-            String temperature = readNBits(3*8);
+            String temperature = readNBitsWithLock(3 * 8);
             System.out.println(temperature);
         }
     }
@@ -102,8 +103,9 @@ public class Manager {
      * Step 2. ROM Command (followed by any required data exchange)
      * Step 3. DS18B20 Function Command (followed by any required data exchange)
      */
-    private void init() {
+    private void init() throws InterruptedException {
         String sensorNumber = initialization();
+        log.trace(String.format("__ init: sensor number is:  %s", sensorNumber));
     }
 
     /**
@@ -114,16 +116,16 @@ public class Manager {
      * the presence pulse in response to the reset, it is indicating
      * to the master that it is on the bus and ready to operate.
      */
-    private String initialization() {
+    private String initialization() throws InterruptedException {
         // Передаём 0 как минимум 480 мс
         prepareToWrite();
-        writeLowVoltage(500);
+        writeLowVoltage(550);
 
-        // Передаём 1 не больше чем 15мс, чтобы успеть переключиться в режим чтения
-        writeHighVoltage(10);
+        // Передаём 1 не меньше чем 15мс и не больше 60 мс
+        writeHighVoltage(20);
 
-        log.trace("__ write succesfull");
-        try {
+        log.trace("__ initialization: write successfull");
+/*        try {
             String filePath = "/home/pi" + File.separator + fileName;
             Files.deleteIfExists(Paths.get(filePath));
             Files.createFile(Paths.get(filePath));
@@ -164,7 +166,7 @@ public class Manager {
                     dateEnd = new Date();
                 }
 
-/*                List<Pair> timeVoltageList = new LinkedList<>();
+*//*                List<Pair> timeVoltageList = new LinkedList<>();
                 for (int i = 0; i < 1000; i++) {
                     Date dateStart = new Date();
                     Date dateEnd = new Date();
@@ -177,17 +179,43 @@ public class Manager {
 
                     dateEnd = new Date();
                     timeVoltageList.add(new Pair((dateEnd.getTime() - dateStart.getTime()), val));
-//                    log.trace("Time read in milliseconds(Files.readAllLines): " + (dateEnd.getTime() - dateStart.getTime()) + ", value = " + val);
+//                    log.trace("Time read in MICROSECONDS(Files.readAllLines): " + (dateEnd.getTime() - dateStart.getTime()) + ", value = " + val);
                 }
-                */
+                *//*
                 fw.print(timeVoltageList.toString());
                 fw.flush();
             }
         } catch (Exception e) {
             log.error(e);
+        }*/
+
+        String result = "";
+        try {
+//            result = readNBitsWithLock(1000);
+            log.trace("Initialization: " + readPresencePulse());
+        } catch (Exception e) {
+            log.trace("__ err: Exception in initialization read: " + e.getMessage());
         }
-        log.trace("__ read succesfull");
-        return "presence pulses";
+        log.trace("__ initialization: read sensor number successfull");
+        return result;
+    }
+
+    private boolean readPresencePulse() throws InterruptedException {
+        prepareToRead();
+        int countLowVoltage = 0;
+        for (int i = 0; i < 10; i++) {
+            int voltage = readVoltage();
+            log.trace("readPresencePulse voltage = " + voltage);
+            if (voltage == 0 ){ countLowVoltage++;}
+            TimeUnit.MICROSECONDS.sleep(20);
+        }
+        if (countLowVoltage > 3){
+            return true;
+        }
+        if (countLowVoltage == 0){
+            throw new RuntimeException("Error reading presence pulse");
+        }
+        return false;
     }
 
     @Getter
@@ -214,7 +242,7 @@ public class Manager {
         return sb.toString();
     }
 
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) throws InterruptedException, IOException {
 /*        // измеряем скорость чтения и записи в драйвер gpio
         // 1) постоянно открываем файл
         // через flush не создавая reader и writer
@@ -239,7 +267,7 @@ public class Manager {
                 List<String> voltages = Files.readAllLines(Paths.get("/sys/class/gpio/" + "gpio35" + "/" + "value"));
                 Integer value = Integer.valueOf(voltages.get(0));
                 dateEnd = new Date();
-                System.out.println("Time read in milliseconds(Files.readAllLines): " + (dateEnd.getTime() - dateStart.getTime()));
+                System.out.println("Time read in MICROSECONDS(Files.readAllLines): " + (dateEnd.getTime() - dateStart.getTime()));
             }
 
             Files.write(Paths.get("/sys/class/gpio/" + "gpio35" + "/" + "direction"), "out".getBytes());
@@ -247,7 +275,7 @@ public class Manager {
                 dateStart = new Date();
                 Files.write(Paths.get("/sys/class/gpio/" + "gpio35" + "/" + "value"), String.valueOf(1).getBytes());
                 dateEnd = new Date();
-                System.out.println("Time write in milliseconds(Files.write): " + (dateEnd.getTime() - dateStart.getTime()));
+                System.out.println("Time write in MICROSECONDS(Files.write): " + (dateEnd.getTime() - dateStart.getTime()));
             }
         } catch (Exception e) {
             log.error(e);
@@ -281,6 +309,16 @@ public class Manager {
         }
     }
 
+
+    private void prepareToReadWithLock() {
+        try {
+            Files.write(Paths.get("/sys/class/gpio/" + pin + "/" + "direction"), "in".getBytes());
+            Files.write(Paths.get("/sys/class/gpio/" + pin + "/" + "edge"), "both".getBytes());
+        } catch (Exception e) {
+            log.error(e);
+        }
+    }
+
     private void writeVoltage(int value) {
         try {
             Files.write(Paths.get("/sys/class/gpio/" + pin + "/" + "value"), String.valueOf(value).getBytes());
@@ -303,7 +341,7 @@ public class Manager {
         for (int i = 0; i < hex.length(); i++) {
             try {
                 writeVoltage((int) hex.charAt(i));
-                TimeUnit.MILLISECONDS.sleep(PAUSE);
+                TimeUnit.MICROSECONDS.sleep(PAUSE);
             } catch (InterruptedException e) {
                 log.error(e);
             }
@@ -313,7 +351,8 @@ public class Manager {
     private void writeHighVoltage(int milSec) {
         try {
             writeVoltage(1);
-            TimeUnit.MILLISECONDS.sleep(milSec);
+            TimeUnit.MICROSECONDS.sleep(milSec);
+            writeVoltage(0);
         } catch (Exception e) {
             log.error(e);
         }
@@ -322,7 +361,7 @@ public class Manager {
     private void writeLowVoltage(int milSec) {
         try {
             writeVoltage(0);
-            TimeUnit.MILLISECONDS.sleep(milSec);
+            TimeUnit.MICROSECONDS.sleep(milSec);
         } catch (Exception e) {
             log.error(e);
         }
@@ -343,10 +382,9 @@ public class Manager {
         for (int i = 0; i < binariCommand.length(); i++) {
             char bit = binariCommand.charAt(i);
             writeLowVoltage(RECOVERY_TIME_BETWEEN_INDIVIDUAL_WRITE_SLOTS);
-            if (bit == 1){
+            if (bit == 1) {
                 writeHighVoltage(WRITE_TIME_SLOT);
-            }
-            else {
+            } else {
                 writeLowVoltage(WRITE_TIME_SLOT);
             }
 /*            if (prevBit == 1 && bit == 1) {
@@ -364,15 +402,41 @@ public class Manager {
         }
     }
 
-    private int readWithLock(){
-        return 0;
+    private String readNBitsWithLock(int numberOfBits) throws InterruptedException, IOException {
+        log.trace("readNBitsWithLock started");
+        StringBuilder sb = new StringBuilder();
+        prepareToReadWithLock();
+        try (BufferedReader reader = new BufferedReader(new FileReader("/sys/class/gpio/" + pin + "/" + "value"))) {
+            for (int i = 0; i < numberOfBits; i++) {
+                try {
+
+                    reader.mark(0);
+                    reader.reset();
+                    if (reader.ready()) {
+                        String ss = reader.readLine();
+                        //Если приходил null, значит состояние не менялось. Не пишем его
+                        log.trace("readNBitsWithLock: " + ss);
+                        if (ss.equals(null)) {continue;}
+                        sb.append(ss);
+                    }
+                } catch (IOException e) {
+                    TimeUnit.MICROSECONDS.sleep(1);
+                    i--;
+                    log.trace("edge did not change" + e.getMessage());
+                }
+            }
+        }
+        log.trace("readNBitsWithLock successfull");
+        return sb.toString();
     }
 
-    private String readNBits (int numberOfBits){
-        StringBuilder sb = new StringBuilder();
+    private String readNBits(int numberOfBits) throws IOException, InterruptedException {
         writeLowVoltage(15);
+        prepareToRead();
+        StringBuilder sb = new StringBuilder();
         for (int i = 0; i < numberOfBits; i++) {
-            sb.append(readWithLock());
+            sb.append(readVoltage());
+            TimeUnit.MICROSECONDS.sleep(1);
         }
         return sb.toString();
     }
